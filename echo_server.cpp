@@ -96,7 +96,12 @@ int writen(int fd, char *buf, int n){
 	while(nwrite < n){
 		int ret = write(fd, buf + nwrite, n - nwrite);
 		if(ret < 0){
-			return nwrite;
+			if(errno == EINTR){
+				continue;
+			}
+			else{
+				return nwrite;
+			}
 		}
 		else{
 			nwrite += ret;
