@@ -25,17 +25,47 @@ void set_nonblocking(int fd){
 	}
 	val = fcntl(fd, F_SETFL, val | O_NONBLOCK);
 	if(val < 0){
-		cout << "fcntl() set error: " << errno<< endl;
+		cout << "fcntl() set error: " << strerror(errno) << endl;
 		_exit(1);
 	}
 
 }
 
+
+void set_socket_buffer(int fd, int size, int opt){
+	int n;
+	unsigned int size_of_n = sizeof(n);
+	int get_opt = opt;
+	/*
+	if(opt == SO_SNDBUFFORCE){
+		get_opt = SO_SNDBUF;
+	}*/
+	if( getsockopt(fd, SOL_SOCKET, get_opt, (void *)&n, &size_of_n) < 0 ){
+		cout << "getsockopt SO_SNDBUF failed:" << strerror(errno) << endl;
+	}
+	else {
+		cout << "send buffer size:" << n << endl;
+	}
+
+
+	if( setsockopt(fd,SOL_SOCKET,opt,(void *)&size, sizeof(size)) < 0 ){
+		cout << "setsockopt SO_SNDBUF failed:" << strerror(errno) << endl;
+	}
+
+	if( getsockopt(fd, SOL_SOCKET, get_opt, (void *)&n, &size_of_n) < 0 ){
+		cout << "getsockopt SO_SNDBUF failed:" << strerror(errno) << endl;
+	}
+	else {
+		cout << "send buffer size after set:" << n << endl;
+	}
+}
+
 void bind_socket_listen(int fd,  int port){
 	const int on = 1;
 	if(setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof (on) ) < 0){
-		cout << "bind() error: " << errno;
+		cout << "bind() error: " << strerror(errno) << endl;;
 	}
+
 	struct sockaddr_in addr;
 	bzero(&addr, sizeof(addr));
 	addr.sin_family = AF_INET;
@@ -56,22 +86,56 @@ void bind_socket_listen(int fd,  int port){
 
 
 int remain = 0;
-char BUF[16];
+int offset = 0;
+char BUF[128];
+char WBUF[12800];
+
+// write until blocked, or until n chars have been written
+int writen(int fd, char *buf, int n){
+	int nwrite = 0;
+	while(nwrite < n){
+		int ret = write(fd, buf + nwrite, n - nwrite);
+		if(ret < 0){
+			return nwrite;
+		}
+		else{
+			nwrite += ret;
+
+		}
+	}
+	return nwrite;
+
+}
 
 void do_use_fd(int epollfd, struct epoll_event* event){
 	// echo
 	int nread = 0;
 	int fd = event->data.fd;
 
-	if(event->events | EPOLLOUT){
-		write(fd, BUF, remain);
-		// remove write event notification
-		struct epoll_event ev;
-        ev.events = EPOLLIN | EPOLLET;
-        ev.data.fd = fd;
-		if (epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &ev) == -1) {
-			cout << " EPOLL_CTL_MOD failed" << endl;
+	if(event->events | EPOLLOUT && remain > 0){
+		cout << "write remaining " << remain << ", BUFF:" << *(BUF + offset) << endl;;
+		int nwrite = writen(fd, BUF + offset, remain);
+		if(nwrite == remain){
+			offset = 0;
+			remain = 0;
+			cout << "finished, nwrite:" << nwrite << ", remain:" << remain << endl;
+			// remove write event notification
+			cout << "remove write event" << endl;
+			struct epoll_event ev;
+	        ev.events = EPOLLIN | EPOLLET;
+	        ev.data.fd = fd;
+			if (epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &ev) == -1) {
+				cout << " EPOLL_CTL_MOD failed" << endl;
+			}
 		}
+		else{
+			// block again, or other error occurs
+			offset += nwrite;
+			remain -= nwrite;
+			cout << strerror(errno) <<", nwrite:" << nwrite << ", remain:" << remain << endl;
+
+		}
+
 
 	}
 	while(true){
@@ -97,23 +161,37 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 			return;
 		}
 		else{
-			int nwrite = write(fd, BUF, nread);
-			if(nwrite < 0){
+			int to_write = 0;
+			// for testing blocking write
+			for( char* p = WBUF; p + nread < WBUF + sizeof(WBUF); p+= nread){
+				memcpy(p, BUF, nread);
+				to_write += nread;
+			}
+			*(WBUF + to_write - 2) = 'X';
+			//
+
+			cout << "writing total : " << to_write << endl;
+			int nwrite = writen(fd, WBUF, to_write);
+			// error occurs
+			if(nwrite < to_write){
 				if(errno == EWOULDBLOCK || errno == EAGAIN){
-					remain = nread;
+					cout << " would block on write, nwrite=" << nwrite << ", remain=" << to_write - nwrite << endl;
+					offset = nwrite;
+					remain = to_write - nwrite;
 					struct epoll_event ev;
-	                ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
-	                ev.data.fd = fd;
+					ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
+					ev.data.fd = fd;
 					if (epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &ev) == -1) {
 						cout << " EPOLL_CTL_MOD failed" << endl;
 					}
 					return;
 				}
-				// RST has been received, SIGPIPE should be ingored!
+				// TODO: RST has been received, SIGPIPE should be ingored!
 				else if(errno == EPIPE){
 					cout << "invalid pipe" << endl;
 					return;
 				}
+
 			}
 
 		}
@@ -163,8 +241,7 @@ int main(int argc, char **argv){
         int conn_fd;
         for (int n = 0; n < nfds; ++n) {
             if (events[n].data.fd == listen_fd) {
-                conn_fd = accept4(listen_fd,
-                                (struct sockaddr *) &local, &addrlen, SOCK_NONBLOCK);
+                conn_fd = accept4(listen_fd, (struct sockaddr *) &local, &addrlen, SOCK_NONBLOCK);
                 if (conn_fd == -1) {
                 	if(errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR || errno == ECONNABORTED){
                 		continue;
@@ -174,6 +251,9 @@ int main(int argc, char **argv){
                     _exit(-1);
                 }
                 //set_nonblocking(conn_fd);
+                // set send buffer to the lowest limit
+                set_socket_buffer(conn_fd, 2, SO_SNDBUF);
+
                 cout << "add new conn" << endl;
                 ev.events = EPOLLIN | EPOLLET;
                 ev.data.fd = conn_fd;
