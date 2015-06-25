@@ -131,7 +131,7 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 	int nread = 0;
 	int fd = event->data.fd;
 
-	if(event->events | EPOLLOUT && remain > 0){
+	if(event->events & EPOLLOUT){
 		cout << "write remaining " << remain << ", BUFF:" << *(BUF + offset) << endl;;
 		int nwrite = writen(fd, BUF + offset, remain);
 		if(nwrite == remain){
