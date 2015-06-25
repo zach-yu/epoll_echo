@@ -84,7 +84,7 @@ void bind_socket_listen(int fd,  int port){
 	}
 }
 
-
+// these data should be connection-wise. each connection should have these attributes!
 int remain = 0;
 int offset = 0;
 char BUF[128];
@@ -96,7 +96,12 @@ int writen(int fd, char *buf, int n){
 	while(nwrite < n){
 		int ret = write(fd, buf + nwrite, n - nwrite);
 		if(ret < 0){
-			return nwrite;
+			if(errno == EINTR){
+				continue;
+			}
+			else{
+				return nwrite;
+			}
 		}
 		else{
 			nwrite += ret;
@@ -106,6 +111,20 @@ int writen(int fd, char *buf, int n){
 	return nwrite;
 
 }
+
+// register ONESHOT event
+int register_event(int epollfd, int fd, int events){
+	struct epoll_event ev;
+	// is EPOLLET needed, if we have EPOLLONESHOT?
+    ev.events = events | EPOLLET | EPOLLONESHOT;
+    ev.data.fd = fd;
+	if (epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &ev) == -1) {
+		cout << " EPOLL_CTL_MOD failed" << endl;
+		return -1;
+	}
+	return 0;
+}
+
 
 void do_use_fd(int epollfd, struct epoll_event* event){
 	// echo
@@ -121,18 +140,15 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 			cout << "finished, nwrite:" << nwrite << ", remain:" << remain << endl;
 			// remove write event notification
 			cout << "remove write event" << endl;
-			struct epoll_event ev;
-	        ev.events = EPOLLIN | EPOLLET;
-	        ev.data.fd = fd;
-			if (epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &ev) == -1) {
-				cout << " EPOLL_CTL_MOD failed" << endl;
-			}
+			register_event(epollfd, fd, EPOLLIN);
 		}
 		else{
 			// block again, or other error occurs
 			offset += nwrite;
 			remain -= nwrite;
 			cout << strerror(errno) <<", nwrite:" << nwrite << ", remain:" << remain << endl;
+			//cout << "register EPOLLOUT" << endl;
+			//register_event(epollfd, fd,  EPOLLIN | EPOLLOUT);
 
 		}
 
@@ -144,12 +160,22 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 			// handle read error
 			if(errno == EWOULDBLOCK || errno == EAGAIN){
 				cout << " would block on read" << endl;
+				// reinstall event
+				if(remain){
+					register_event(epollfd, fd, EPOLLIN | EPOLLOUT);
+				}
+				else{
+					register_event(epollfd, fd, EPOLLIN);
+
+				}
 			}
 			else if(errno == ECONNRESET){
 				cout << "conn is reset by peer" << endl;
+				close(fd);
 			}
 			else{
 				cout << "read failed with errno:" << strerror(errno) << endl;
+				close(fd);
 
 			}
 			return;
@@ -178,12 +204,8 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 					cout << " would block on write, nwrite=" << nwrite << ", remain=" << to_write - nwrite << endl;
 					offset = nwrite;
 					remain = to_write - nwrite;
-					struct epoll_event ev;
-					ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
-					ev.data.fd = fd;
-					if (epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &ev) == -1) {
-						cout << " EPOLL_CTL_MOD failed" << endl;
-					}
+					// add write event
+					register_event(epollfd, fd, EPOLLIN | EPOLLOUT);
 					return;
 				}
 				// TODO: RST has been received, SIGPIPE should be ingored!
@@ -255,7 +277,7 @@ int main(int argc, char **argv){
                 set_socket_buffer(conn_fd, 2, SO_SNDBUF);
 
                 cout << "add new conn" << endl;
-                ev.events = EPOLLIN | EPOLLET;
+                ev.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
                 ev.data.fd = conn_fd;
                 if (epoll_ctl(epollfd, EPOLL_CTL_ADD, conn_fd, &ev) == -1) {
                     perror("epoll_ctl: conn_sock");
