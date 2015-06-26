@@ -14,7 +14,6 @@
 #include <errno.h>
 #include <iostream>
 #include <fcntl.h>
-#include <sys/epoll.h>
 #include <string.h>
 #include <strings.h>
 #include <stdio.h>
@@ -38,6 +37,7 @@ void read_func(int fd){
 		}
 		else{
 			cout << "received bytes:" << ret << endl;
+			cout << string(readbuf, ret) << endl;
 		}
 
 	}
