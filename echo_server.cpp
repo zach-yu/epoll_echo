@@ -132,12 +132,12 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 	int fd = event->data.fd;
 
 	if(event->events & EPOLLOUT){
-		cout << "write remaining " << remain << ", BUFF:" << *(BUF + offset) << endl;;
-		int nwrite = writen(fd, BUF + offset, remain);
+		cout << "write remaining " << remain << endl;;
+		int nwrite = writen(fd, WBUF + offset, remain);
 		if(nwrite == remain){
+			cout << "finished, nwrite:" << nwrite << ", last:" << WBUF[offset + nwrite - 1] << endl;
 			offset = 0;
 			remain = 0;
-			cout << "finished, nwrite:" << nwrite << ", remain:" << remain << endl;
 			// remove write event notification
 			cout << "remove write event" << endl;
 			register_event(epollfd, fd, EPOLLIN);
@@ -158,7 +158,10 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 		nread = read(event->data.fd, BUF, sizeof(BUF));
 		if(nread < 0){
 			// handle read error
-			if(errno == EWOULDBLOCK || errno == EAGAIN){
+			if(errno == EINTR){
+				continue;
+			}
+			else if(errno == EWOULDBLOCK || errno == EAGAIN){
 				cout << " would block on read" << endl;
 				// reinstall event
 				if(remain){
@@ -193,7 +196,7 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 				memcpy(p, BUF, nread);
 				to_write += nread;
 			}
-			*(WBUF + to_write - 2) = 'X';
+			*(WBUF + to_write - 1) = 'X';
 			//
 
 			cout << "writing total : " << to_write << endl;
@@ -273,7 +276,7 @@ int main(int argc, char **argv){
                     _exit(-1);
                 }
                 //set_nonblocking(conn_fd);
-                // set send buffer to the lowest limit
+                // set send buffer to the lowest limit, for testing purpose
                 set_socket_buffer(conn_fd, 2, SO_SNDBUF);
 
                 cout << "add new conn" << endl;
