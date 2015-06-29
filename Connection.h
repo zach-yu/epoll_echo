@@ -11,13 +11,16 @@
 #include "ByteBuffer.h"
 #include <unordered_map>
 #include <vector>
+#include <memory>
+
+using namespace std;
 
 class Connection {
 public:
 	Connection(int fd);
 	virtual ~Connection();
 
-	void setBuffer(ByteBuffer* buf){
+	void setBuffer(const shared_ptr<ByteBuffer>& buf){
 		_wbuf = buf;
 	}
 
@@ -25,7 +28,7 @@ public:
 	int write(ByteBuffer* buf);
 
 	int writeRemaining(){
-		return write(_wbuf);
+		return write(_wbuf.get());
 	}
 
 	int wbufRemaining(){
@@ -34,17 +37,18 @@ public:
 		else
 			return 0;
 	}
-
+/*
 	void freeWbuf(){
 		delete _wbuf;
 		_wbuf = 0;
 	}
-
+*/
 	int _conn_fd;
 private:
 	//int _conn_fd;
-	//ConnMap* _conn_map;
-	ByteBuffer* _wbuf;
+	shared_ptr<ByteBuffer> _wbuf;
+	shared_ptr<ByteBuffer> _rbuf;
+
 };
 
 typedef std::unordered_map<int, Connection*> ConnMap;

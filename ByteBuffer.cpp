@@ -6,6 +6,9 @@
  */
 
 #include "ByteBuffer.h"
+#include <iostream>
+
+using namespace std;
 
 ByteBuffer::ByteBuffer(size_t sz) {
 	_buff = new unsigned char[sz];
@@ -16,6 +19,7 @@ ByteBuffer::ByteBuffer(size_t sz) {
 
 ByteBuffer::~ByteBuffer() {
 	if(_buff != nullptr){
+		cout << "ByteBuffer::~ByteBuffer()" << endl;
 		delete[] _buff;
 		_sz = 0;
 		_limit = 0;

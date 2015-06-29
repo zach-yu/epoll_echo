@@ -143,14 +143,13 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 		cout << "write remaining " << conn->wbufRemaining() << endl;;
 		int nwrite = conn->writeRemaining();
 		if (conn->wbufRemaining() == 0){
-			conn->freeWbuf();
 			cout << "finished, nwrite:" << nwrite << endl;
 			// remove write event notification
 			cout << "remove write event" << endl;
 			register_event(epollfd, conn, EPOLLIN);
 		}
 		else{
-			cout << strerror(errno) <<", nwrite:" << nwrite << ", remain:" << remain << endl;
+			cout << strerror(errno) <<", nwrite:" << nwrite << endl;
 		}
 	}
 
@@ -199,10 +198,11 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 				to_write += nread;
 			}
 			*(WBUF + to_write - 1) = 'X';
-			ByteBuffer* wbuf = new ByteBuffer();
+			auto wbuf = make_shared<ByteBuffer>(ByteBuffer());
 			wbuf->setBuffer(WBUF, to_write);
+			//
 			cout << "writing total : " << wbuf->remaining() << endl;
-			int nwrite = conn->write(wbuf);
+			int nwrite = conn->write(wbuf.get());
 			cout << "remain : " << wbuf->remaining() << endl;
 			if(wbuf->remaining()){
 				if(errno == EWOULDBLOCK || errno == EAGAIN){
