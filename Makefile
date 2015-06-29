@@ -7,10 +7,10 @@ LIBS += -lpthread
 
 
 all: $(EXES)
-echo_cli: echo_cli.o
+echo_cli: echo_cli.o 
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LIBS)
 
-echo_server: echo_server.o
+echo_server: echo_server.o ByteBuffer.o Connection.o
 	$(CXX) $(CXXFLAGS) -o $@ $^ $(LIBS) 
 
 	

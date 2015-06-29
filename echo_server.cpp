@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-
+#include "Connection.h"
 
 using namespace std;
 
@@ -88,7 +88,9 @@ void bind_socket_listen(int fd,  int port){
 int remain = 0;
 int offset = 0;
 char BUF[128];
-char WBUF[12800];
+//char WBUF[12800];
+
+
 
 // write until blocked, or until n chars have been written
 int writen(int fd, char *buf, int n){
@@ -100,7 +102,7 @@ int writen(int fd, char *buf, int n){
 				continue;
 			}
 			else{
-				return nwrite;
+				break;
 			}
 		}
 		else{
@@ -112,13 +114,15 @@ int writen(int fd, char *buf, int n){
 
 }
 
+
 // register ONESHOT event
-int register_event(int epollfd, int fd, int events){
+int register_event(int epollfd, Connection* conn, int events){
+	cout << "register event IN "<< (int)(events&EPOLLIN) << " OUT " << (int)(events&EPOLLOUT) <<" on conn " << conn << endl;
 	struct epoll_event ev;
 	// is EPOLLET needed, if we have EPOLLONESHOT?
     ev.events = events | EPOLLET | EPOLLONESHOT;
-    ev.data.fd = fd;
-	if (epoll_ctl(epollfd, EPOLL_CTL_MOD, fd, &ev) == -1) {
+    ev.data.ptr = conn;
+	if (epoll_ctl(epollfd, EPOLL_CTL_MOD, conn->_conn_fd, &ev) == -1) {
 		cout << " EPOLL_CTL_MOD failed" << endl;
 		return -1;
 	}
@@ -129,33 +133,30 @@ int register_event(int epollfd, int fd, int events){
 void do_use_fd(int epollfd, struct epoll_event* event){
 	// echo
 	int nread = 0;
-	int fd = event->data.fd;
 
+	Connection* conn = (Connection*)event->data.ptr;
+	cout << "conn:" << conn << endl;
+	int fd = conn->_conn_fd;
+
+	cout << "event on conn " << conn <<", fd=" << fd << endl;
 	if(event->events & EPOLLOUT){
-		cout << "write remaining " << remain << endl;;
-		int nwrite = writen(fd, WBUF + offset, remain);
-		if(nwrite == remain){
-			cout << "finished, nwrite:" << nwrite << ", last:" << WBUF[offset + nwrite - 1] << endl;
-			offset = 0;
-			remain = 0;
+		cout << "write remaining " << conn->wbufRemaining() << endl;;
+		int nwrite = conn->writeRemaining();
+		if (conn->wbufRemaining() == 0){
+			conn->freeWbuf();
+			cout << "finished, nwrite:" << nwrite << endl;
 			// remove write event notification
 			cout << "remove write event" << endl;
-			register_event(epollfd, fd, EPOLLIN);
+			register_event(epollfd, conn, EPOLLIN);
 		}
 		else{
-			// block again, or other error occurs
-			offset += nwrite;
-			remain -= nwrite;
 			cout << strerror(errno) <<", nwrite:" << nwrite << ", remain:" << remain << endl;
-			//cout << "register EPOLLOUT" << endl;
-			//register_event(epollfd, fd,  EPOLLIN | EPOLLOUT);
-
 		}
-
-
 	}
+
 	while(true){
-		nread = read(event->data.fd, BUF, sizeof(BUF));
+		cout << "read again" << endl;
+		nread = read(fd, BUF, sizeof(BUF));
 		if(nread < 0){
 			// handle read error
 			if(errno == EINTR){
@@ -164,21 +165,21 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 			else if(errno == EWOULDBLOCK || errno == EAGAIN){
 				cout << " would block on read" << endl;
 				// reinstall event
-				if(remain){
-					register_event(epollfd, fd, EPOLLIN | EPOLLOUT);
+				if(conn->wbufRemaining() > 0){
+					register_event(epollfd, conn, EPOLLIN | EPOLLOUT);
 				}
 				else{
-					register_event(epollfd, fd, EPOLLIN);
+					register_event(epollfd, conn, EPOLLIN);
 
 				}
 			}
 			else if(errno == ECONNRESET){
 				cout << "conn is reset by peer" << endl;
-				close(fd);
+				delete(conn);
 			}
 			else{
 				cout << "read failed with errno:" << strerror(errno) << endl;
-				close(fd);
+				delete(conn);
 
 			}
 			return;
@@ -186,40 +187,41 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 		// EOF, close my end.
 		else if(nread == 0){
 			cout << "client closing" << endl;
-			close(fd);
+			delete(conn);
 			return;
 		}
 		else{
 			int to_write = 0;
 			// for testing blocking write
-			for( char* p = WBUF; p + nread < WBUF + sizeof(WBUF); p+= nread){
+			unsigned char *WBUF = new unsigned char[12800];
+			for( unsigned char* p = WBUF; p + nread < WBUF + 12800; p+= nread){
 				memcpy(p, BUF, nread);
 				to_write += nread;
 			}
 			*(WBUF + to_write - 1) = 'X';
-			//
-
-			cout << "writing total : " << to_write << endl;
-			int nwrite = writen(fd, WBUF, to_write);
-			// error occurs
-			if(nwrite < to_write){
+			ByteBuffer* wbuf = new ByteBuffer();
+			wbuf->setBuffer(WBUF, to_write);
+			cout << "writing total : " << wbuf->remaining() << endl;
+			int nwrite = conn->write(wbuf);
+			cout << "remain : " << wbuf->remaining() << endl;
+			if(wbuf->remaining()){
 				if(errno == EWOULDBLOCK || errno == EAGAIN){
-					cout << " would block on write, nwrite=" << nwrite << ", remain=" << to_write - nwrite << endl;
-					offset = nwrite;
-					remain = to_write - nwrite;
-					// add write event
-					register_event(epollfd, fd, EPOLLIN | EPOLLOUT);
-					return;
+					cout << " would block on write, nwrite=" << nwrite << ", remain=" << wbuf->remaining() << endl;
+					conn->setBuffer(wbuf);
+					register_event(epollfd, conn, EPOLLIN | EPOLLOUT);
 				}
 				// TODO: RST has been received, SIGPIPE should be ingored!
 				else if(errno == EPIPE){
 					cout << "invalid pipe" << endl;
-					return;
 				}
-
+				else{
+					cout << strerror(errno) << endl;
+				}
+				return;
 			}
 
 		}
+
 
 	}
 
@@ -227,6 +229,7 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 
 int main(int argc, char **argv){
 
+	ConnMap conn_map;
 	int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
 	if(listen_fd < 0){
 		cout << "socket() error: " << errno;
@@ -279,9 +282,12 @@ int main(int argc, char **argv){
                 // set send buffer to the lowest limit, for testing purpose
                 set_socket_buffer(conn_fd, 2, SO_SNDBUF);
 
-                cout << "add new conn" << endl;
+
+                Connection* new_conn = new Connection(conn_fd);
+                cout << "add new conn " << new_conn <<", fd=" << conn_fd << endl;
+                conn_map.insert(make_pair(conn_fd, new_conn));
                 ev.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
-                ev.data.fd = conn_fd;
+                ev.data.ptr = new_conn;
                 if (epoll_ctl(epollfd, EPOLL_CTL_ADD, conn_fd, &ev) == -1) {
                     perror("epoll_ctl: conn_sock");
                     _exit(-1);
