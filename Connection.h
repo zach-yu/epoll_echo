@@ -20,8 +20,12 @@ public:
 	Connection(int fd);
 	virtual ~Connection();
 
-	void setBuffer(const shared_ptr<ByteBuffer>& buf){
+	void setWriteBuffer(const shared_ptr<ByteBuffer>& buf){
 		_wbuf = buf;
+	}
+
+	void setReadBuffer(const shared_ptr<ByteBuffer>& buf){
+		_rbuf = buf;
 	}
 
 	int read(ByteBuffer* buf){ return 0;};
@@ -37,15 +41,12 @@ public:
 		else
 			return 0;
 	}
-/*
-	void freeWbuf(){
-		delete _wbuf;
-		_wbuf = 0;
-	}
-*/
+
 	int _conn_fd;
 private:
 	//int _conn_fd;
+	// these pointers are used to temporarily store
+	// partially written/read buffer pointers
 	shared_ptr<ByteBuffer> _wbuf;
 	shared_ptr<ByteBuffer> _rbuf;
 

@@ -207,7 +207,7 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 			if(wbuf->remaining()){
 				if(errno == EWOULDBLOCK || errno == EAGAIN){
 					cout << " would block on write, nwrite=" << nwrite << ", remain=" << wbuf->remaining() << endl;
-					conn->setBuffer(wbuf);
+					conn->setWriteBuffer(wbuf);
 					register_event(epollfd, conn, EPOLLIN | EPOLLOUT);
 				}
 				// TODO: RST has been received, SIGPIPE should be ingored!
