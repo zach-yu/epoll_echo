@@ -87,7 +87,7 @@ void bind_socket_listen(int fd,  int port){
 // these data should be connection-wise. each connection should have these attributes!
 int remain = 0;
 int offset = 0;
-char BUF[128];
+//char BUF[128];
 //char WBUF[12800];
 
 
@@ -132,7 +132,6 @@ int register_event(int epollfd, Connection* conn, int events){
 
 void do_use_fd(int epollfd, struct epoll_event* event){
 	// echo
-	int nread = 0;
 
 	Connection* conn = (Connection*)event->data.ptr;
 	cout << "conn:" << conn << endl;
@@ -153,8 +152,58 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 		}
 	}
 
+	cout << "read connection " << conn << endl;
 	while(true){
-		cout << "read again" << endl;
+		// new message
+		if(conn->_state == Connection::READY){
+			cout << "state is Connection::READY" << endl;
+			ByteBuffer headbuf (4);
+			cout << " reading header" << endl;
+			conn->readMessageHeader(headbuf);
+			if(headbuf.remaining() > 0){
+				// blocked
+				cout << "blocked on reading header" << endl;
+				break;
+			}
+			else{
+				cout << "finished header" << endl;
+			}
+		}
+
+		else if(conn->_state == Connection::READING_HEADER){
+			cout << "state is Connection::READING_HEADER" << endl;
+			conn->readRemaining();
+			if(conn->rbufRemaining() > 0){
+				// blocked
+				break;
+			}
+		}
+
+		else if(conn->_state == Connection::FINISHED_HEADER){
+			cout << "state is Connection::FINISHED_HEADER" << endl;
+			ByteBuffer bodybuf (16);
+			conn->readMessageBody(bodybuf);
+			if(bodybuf.remaining() > 0){
+				break;
+			}
+		}
+
+		else if(conn->_state == Connection::READING_BODY){
+			cout << "state is Connection::READING_BODY" << endl;
+			conn->readRemaining();
+			if(conn->rbufRemaining() > 0){
+				// blocked
+				break;
+			}
+		}
+	}
+	if(conn->_state == Connection::CLOSED || conn->_state == Connection::ERROR){
+		cout << "state is Connection::CLOSED||Connection::ERROR" << endl;
+		delete conn;
+	}
+
+/*
+
 		nread = read(fd, BUF, sizeof(BUF));
 		if(nread < 0){
 			// handle read error
@@ -222,8 +271,8 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 
 		}
 
+*/
 
-	}
 
 }
 
@@ -283,7 +332,7 @@ int main(int argc, char **argv){
                 set_socket_buffer(conn_fd, 2, SO_SNDBUF);
 
 
-                Connection* new_conn = new Connection(conn_fd);
+                Connection* new_conn = new Connection(conn_fd, epollfd);
                 cout << "add new conn " << new_conn <<", fd=" << conn_fd << endl;
                 conn_map.insert(make_pair(conn_fd, new_conn));
                 ev.events = EPOLLIN | EPOLLET | EPOLLONESHOT;

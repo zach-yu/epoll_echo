@@ -9,12 +9,31 @@
 #define BYTEBUFFER_H_
 
 #include <stdlib.h>
+#include <iostream>
+#include <string.h>
 
 class ByteBuffer {
 public:
 	ByteBuffer() : _buff(0), _sz(0), _limit(0), _pos(0){}
 
-	ByteBuffer(size_t sz);
+	ByteBuffer(size_t sz){
+
+		_buff = new unsigned char[sz];
+		std::cout << "allocate buf:" << (void*) _buff << std::endl;
+		_limit = _sz = sz;
+		_pos = _buff;
+	}
+
+	ByteBuffer(const ByteBuffer& buf){
+
+		_buff = new unsigned char[buf._sz];
+
+		_sz = buf._sz;
+		memcpy(_buff, buf._buff, _sz);
+		_limit = buf._limit;
+		_pos = _buff + (buf._pos - buf._buff);
+		std::cout << "ByteBuffer copy ctor, allocate at " << (void*) _buff << " size:" << _sz << " filled:" << _pos - _buff << std::endl;
+	}
 
 	virtual ~ByteBuffer();
 
