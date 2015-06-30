@@ -35,6 +35,13 @@ public:
 		std::cout << "ByteBuffer copy ctor, allocate at " << (void*) _buff << " size:" << _sz << " filled:" << _pos - _buff << std::endl;
 	}
 
+	ByteBuffer(ByteBuffer&& other) : _buff(other._buff), _sz(other._sz), _limit(other._limit), _pos(other._pos){
+		other._pos = 0;
+		other._limit = 0;
+		other._sz = 0;
+		other._buff = 0;
+	}
+
 	virtual ~ByteBuffer();
 
 	int remaining(){
