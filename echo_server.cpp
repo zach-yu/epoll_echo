@@ -84,14 +84,6 @@ void bind_socket_listen(int fd,  int port){
 	}
 }
 
-// these data should be connection-wise. each connection should have these attributes!
-int remain = 0;
-int offset = 0;
-//char BUF[128];
-//char WBUF[12800];
-
-
-
 // write until blocked, or until n chars have been written
 int writen(int fd, char *buf, int n){
 	int nwrite = 0;
@@ -131,25 +123,15 @@ int register_event(int epollfd, Connection* conn, int events){
 
 
 void do_use_fd(int epollfd, struct epoll_event* event){
-	// echo
 
 	Connection* conn = (Connection*)event->data.ptr;
 	cout << "conn:" << conn << endl;
 	int fd = conn->_conn_fd;
 
-	cout << "event on conn " << conn <<", fd=" << fd << endl;
+	cout << "event " << event->events << " on conn " << conn <<", fd=" << fd << endl;
 	if(event->events & EPOLLOUT){
-		cout << "write remaining " << conn->wbufRemaining() << endl;;
-		int nwrite = conn->writeRemaining();
-		if (conn->wbufRemaining() == 0){
-			cout << "finished, nwrite:" << nwrite << endl;
-			// remove write event notification
-			cout << "remove write event" << endl;
-			register_event(epollfd, conn, EPOLLIN);
-		}
-		else{
-			cout << strerror(errno) <<", nwrite:" << nwrite << endl;
-		}
+		cout << "flushing write buffer queue" << endl;
+		conn->flushWBuffer();
 	}
 
 	cout << "read connection " << conn << endl;
@@ -161,12 +143,18 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 			cout << " reading header" << endl;
 			conn->readMessageHeader(headbuf);
 			if(headbuf.remaining() > 0){
-				// blocked
-				cout << "blocked on reading header" << endl;
+				if(conn->_state != Connection::ERROR && conn->_state != Connection::CLOSED){
+					// blocked
+					cout << "blocked on reading header" << endl;
+					// save the buffer for next read
+					auto header_buf_ptr = make_shared<ByteBuffer>(move(headbuf));
+					conn->setReadBuffer(header_buf_ptr);
+				}
 				break;
 			}
 			else{
 				cout << "finished header" << endl;
+				conn->processHeader(headbuf);
 			}
 		}
 
@@ -174,17 +162,34 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 			cout << "state is Connection::READING_HEADER" << endl;
 			conn->readRemaining();
 			if(conn->rbufRemaining() > 0){
-				// blocked
+				// blocked or error
 				break;
+			}
+			else{
+				// process header
+				conn->processHeader();
 			}
 		}
 
 		else if(conn->_state == Connection::FINISHED_HEADER){
 			cout << "state is Connection::FINISHED_HEADER" << endl;
+			// TODO: get length from header
+			//ByteBuffer bodybuf (_body_len);
 			ByteBuffer bodybuf (16);
 			conn->readMessageBody(bodybuf);
+			cout << "remaining:" << bodybuf.remaining() << endl;
 			if(bodybuf.remaining() > 0){
+				if(conn->_state != Connection::ERROR && conn->_state != Connection::CLOSED){
+					cout << "blocked on reading body" << endl;
+					// save the buffer for next read
+					auto body_buf_ptr = make_shared<ByteBuffer>(move(bodybuf));
+					conn->setReadBuffer(body_buf_ptr);
+				}
 				break;
+			}
+			else{
+				//process body
+				conn->processBody();
 			}
 		}
 
@@ -195,85 +200,18 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 				// blocked
 				break;
 			}
+			// finished reading body
+			else{
+				//process body
+				conn->processBody();
+
+			}
 		}
 	}
 	if(conn->_state == Connection::CLOSED || conn->_state == Connection::ERROR){
 		cout << "state is Connection::CLOSED||Connection::ERROR" << endl;
 		delete conn;
 	}
-
-/*
-
-		nread = read(fd, BUF, sizeof(BUF));
-		if(nread < 0){
-			// handle read error
-			if(errno == EINTR){
-				continue;
-			}
-			else if(errno == EWOULDBLOCK || errno == EAGAIN){
-				cout << " would block on read" << endl;
-				// reinstall event
-				if(conn->wbufRemaining() > 0){
-					register_event(epollfd, conn, EPOLLIN | EPOLLOUT);
-				}
-				else{
-					register_event(epollfd, conn, EPOLLIN);
-
-				}
-			}
-			else if(errno == ECONNRESET){
-				cout << "conn is reset by peer" << endl;
-				delete(conn);
-			}
-			else{
-				cout << "read failed with errno:" << strerror(errno) << endl;
-				delete(conn);
-
-			}
-			return;
-		}
-		// EOF, close my end.
-		else if(nread == 0){
-			cout << "client closing" << endl;
-			delete(conn);
-			return;
-		}
-		else{
-			int to_write = 0;
-			// for testing blocking write
-			unsigned char *WBUF = new unsigned char[12800];
-			for( unsigned char* p = WBUF; p + nread < WBUF + 12800; p+= nread){
-				memcpy(p, BUF, nread);
-				to_write += nread;
-			}
-			*(WBUF + to_write - 1) = 'X';
-			auto wbuf = make_shared<ByteBuffer>(ByteBuffer());
-			wbuf->setBuffer(WBUF, to_write);
-			//
-			cout << "writing total : " << wbuf->remaining() << endl;
-			int nwrite = conn->write(wbuf.get());
-			cout << "remain : " << wbuf->remaining() << endl;
-			if(wbuf->remaining()){
-				if(errno == EWOULDBLOCK || errno == EAGAIN){
-					cout << " would block on write, nwrite=" << nwrite << ", remain=" << wbuf->remaining() << endl;
-					conn->setWriteBuffer(wbuf);
-					register_event(epollfd, conn, EPOLLIN | EPOLLOUT);
-				}
-				// TODO: RST has been received, SIGPIPE should be ingored!
-				else if(errno == EPIPE){
-					cout << "invalid pipe" << endl;
-				}
-				else{
-					cout << strerror(errno) << endl;
-				}
-				return;
-			}
-
-		}
-
-*/
-
-
 }
 
 int main(int argc, char **argv){

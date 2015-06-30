@@ -24,6 +24,7 @@
 #include <unordered_map>
 #include <vector>
 #include <memory>
+#include <deque>
 
 using namespace std;
 
@@ -41,9 +42,6 @@ public:
 	Connection(int fd, int epollfd);
 	virtual ~Connection();
 
-	void setWriteBuffer(const shared_ptr<ByteBuffer>& buf){
-		_wbuf = buf;
-	}
 
 	void setReadBuffer(const shared_ptr<ByteBuffer>& buf){
 		_rbuf = buf;
@@ -63,35 +61,27 @@ public:
 		}
 
 		// reinstall event
-		if(wbufRemaining() > 0){
-			register_event(_epoll_fd, this, EPOLLIN | EPOLLOUT);
+		if(_wbuf_queue.size() > 0){
+			register_event(EPOLLIN | EPOLLOUT);
 		}
 		else{
-			register_event(_epoll_fd, this, EPOLLIN);
+			register_event(EPOLLIN);
 		}
 
-		if(header_buf.remaining() > 0){
-			// blocked
-			cout << "make_shared" << endl;
-			// buffer will be copied here. the buffer copy can be elliminated if
-			// we allocate it on heap.
-			auto header_buf_ptr = make_shared<ByteBuffer>(header_buf);
-			setReadBuffer(header_buf_ptr);
-			return -1;
-		}
-		else{
+		if(header_buf.remaining() == 0){
 			cout << "state: FINISHED_HEADER" << endl;
 			_state = FINISHED_HEADER;
 			return 1;
+		}
+		else{
+			return -1;
 		}
 	}
 
 	int readMessageBody(ByteBuffer& body_buf){
 		_state = READING_BODY;
-
-
 		int ret = read(&body_buf);
-		cout << "read body bytes:" << ret << endl;
+		cout << "read body bytes:" << ret << ", body:" << string((const char *)body_buf._buff, body_buf._pos - body_buf._buff) << endl;
 		if(_state == CLOSED) {
 			return 0;
 		}
@@ -100,41 +90,24 @@ public:
 			return -1;
 		}
 
-		if(wbufRemaining() > 0){
-			register_event(_epoll_fd, this, EPOLLIN | EPOLLOUT);
+		if(_wbuf_queue.size()  > 0){
+			register_event( EPOLLIN | EPOLLOUT);
 		}
 		else{
-			register_event(_epoll_fd, this, EPOLLIN);
+			register_event(EPOLLIN);
 		}
 
-		if(body_buf.remaining() > 0){
-			// blocked
-			// reinstall event
-			cout << "make_shared" << endl;
-			auto body_buf_ptr = make_shared<ByteBuffer>(body_buf);
-			setReadBuffer(body_buf_ptr);
-			return -1;
-		}
-		else{
+		if(body_buf.remaining() == 0){
 			_state = READY;
 			return 1;
 		}
-
+		else{
+			return -1;
+		}
 	}
 
 	int read(ByteBuffer* buf);
 	int write(ByteBuffer* buf);
-
-	int writeRemaining(){
-		return write(_wbuf.get());
-	}
-
-	int wbufRemaining(){
-		if(_wbuf)
-			return _wbuf->remaining();
-		else
-			return 0;
-	}
 
 	int readRemaining(){
 		int ret =read(_rbuf.get());
@@ -149,16 +122,48 @@ public:
 			}
 		}
 		else{
-			cout << "have to read: " << _rbuf->remaining() << endl;
-			if(wbufRemaining() > 0){
-				register_event(_epoll_fd, this, EPOLLIN | EPOLLOUT);
+			cout << "rbuf: "<< string((const char *)_rbuf->_buff, _rbuf->_pos - _rbuf->_buff) << " have to read: " << _rbuf->remaining() << endl;
+			if(_wbuf_queue.size() > 0){
+				register_event(EPOLLIN | EPOLLOUT);
 			}
 			else{
-				register_event(_epoll_fd, this, EPOLLIN);
+				register_event(EPOLLIN);
 			}
 
 		}
 		return ret;
+	}
+
+	int processHeader(const ByteBuffer& buff){
+		//TODO:
+		cout << "reived header:" << string((const char *)buff._buff, buff._limit) << endl;
+		return 1;
+	}
+
+	int processHeader(){
+		//TODO:
+		cout << "reived header:" << string((const char *)_rbuf->_buff, _rbuf->_limit) << endl;
+		return 1;
+	}
+
+	int processBody(){
+		cout << "received body:" << string((const char *)_rbuf->_buff, _rbuf->_limit) << endl;
+		// decode body and call processor
+		int to_write = 0;
+		// for testing blocking write
+		unsigned char *WBUF = new unsigned char[12800];
+		size_t nread = _rbuf->_limit;
+		for( unsigned char* p = WBUF; p + nread < WBUF + 12800; p+= nread){
+			memcpy(p, _rbuf->_buff, nread);
+			to_write += nread;
+		}
+		*(WBUF + to_write - 1) = 'X' ;
+		//
+		auto wbuf = make_shared<ByteBuffer>(ByteBuffer());
+		wbuf->setBuffer(WBUF, to_write);
+		addWBuffer(wbuf);
+		register_event(EPOLLIN | EPOLLOUT);
+		return to_write;
 	}
 
 	int rbufRemaining(){
@@ -166,6 +171,35 @@ public:
 			return _rbuf->remaining();
 		else
 			return 0;
+	}
+
+	void addWBuffer(const shared_ptr<ByteBuffer>& buf){
+		_wbuf_queue.push_back(buf);
+
+	}
+
+	int flushWBuffer(){
+		int count = 0;
+		while(!_wbuf_queue.empty()){
+			auto buffer = _wbuf_queue.front();
+			write(buffer.get());
+			if(buffer->remaining() > 0){
+				// blocked or error
+				break;
+			}
+			else{
+				_wbuf_queue.pop_front();
+				++count;
+			}
+		}
+		if(_wbuf_queue.empty()){
+			cout << "remove write event" << endl;
+			register_event(EPOLLIN);
+		}
+		else{
+			cout << "blocked in flushWBUffer" << endl;
+		}
+		return count;
 	}
 
 	int _conn_fd;
@@ -176,17 +210,18 @@ private:
 
 	// these pointers are used to temporarily store
 	// partially written/read buffer pointers
-	shared_ptr<ByteBuffer> _wbuf;
+
+	deque<shared_ptr<ByteBuffer>> _wbuf_queue;
 	shared_ptr<ByteBuffer> _rbuf;
 
 	// register ONESHOT event
-	int register_event(int epollfd, Connection* conn, int events){
-		cout << "register event IN "<< (int)(events&EPOLLIN) << " OUT " << (int)(events&EPOLLOUT) <<" on conn " << conn << endl;
+	int register_event(int events){
+		cout << "register event IN "<< (int)(events&EPOLLIN) << " OUT " << (int)(events&EPOLLOUT) <<" on conn " << this << endl;
 		struct epoll_event ev;
 		// is EPOLLET needed, if we have EPOLLONESHOT?
 	    ev.events = events | EPOLLET | EPOLLONESHOT;
-	    ev.data.ptr = conn;
-		if (epoll_ctl(epollfd, EPOLL_CTL_MOD, conn->_conn_fd, &ev) == -1) {
+	    ev.data.ptr = this;
+		if (epoll_ctl(_epoll_fd, EPOLL_CTL_MOD, _conn_fd, &ev) == -1) {
 			cout << " EPOLL_CTL_MOD failed" << endl;
 			return -1;
 		}
