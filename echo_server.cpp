@@ -84,6 +84,7 @@ void bind_socket_listen(int fd,  int port){
 	}
 }
 
+/*
 // write until blocked, or until n chars have been written
 int writen(int fd, char *buf, int n){
 	int nwrite = 0;
@@ -105,7 +106,7 @@ int writen(int fd, char *buf, int n){
 	return nwrite;
 
 }
-
+*/
 class HeaderTask{
 	ByteBuffer _rbuf;
 public:
