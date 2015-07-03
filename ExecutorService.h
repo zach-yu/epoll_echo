@@ -21,8 +21,10 @@ using namespace std;
 template<class Result, class Task>
 class ExecutorService {
 public:
-	ExecutorService() : _exit(0){
-		_thread_pool.push_back(thread(&ExecutorService<Result, Task>::thread_func, this));
+	ExecutorService(size_t nthread) : _nthread(nthread), _exit(0){
+		for(size_t i = 0; i < _nthread; ++i){
+			_thread_pool.push_back(thread(&ExecutorService<Result, Task>::thread_func, this));
+		}
 	}
 	virtual ~ExecutorService(){
 		shutdown();
@@ -48,6 +50,7 @@ public:
 	}
 
 private:
+	size_t _nthread;
 	int _exit;
 	vector<thread> _thread_pool;
 	mutex _mutex;
@@ -58,7 +61,7 @@ private:
 		while(!_exit){
 			std::unique_lock<std::mutex> lock(_mutex);
 			if(!_task_que.empty()){
-				cout << "executing task" << endl;
+				//cout << "executing task" << endl;
 				auto task = move(_task_que.front());
 				_task_que.pop_front();
 				task();

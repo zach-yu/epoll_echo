@@ -18,7 +18,7 @@ using namespace std;
 
 const int MAX_EVENTS = 10000;
 
-ExecutorService<void, packaged_task<void()>> _executor_service;
+ExecutorService<void, packaged_task<void()>> _executor_service(4);
 
 void set_nonblocking(int fd){
 	int val = fcntl(fd, F_GETFL, 0);
