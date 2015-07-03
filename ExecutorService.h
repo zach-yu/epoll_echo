@@ -28,7 +28,6 @@ public:
 		shutdown();
 	}
 
-	//std::future<R> submit(std::function& callable);
 	std::future<Result> submit(Task& task){
 		std::unique_lock<std::mutex> lock(_mutex);
 		auto f = task.get_future();
@@ -57,7 +56,6 @@ private:
 
 	void thread_func(){
 		while(!_exit){
-
 			std::unique_lock<std::mutex> lock(_mutex);
 			if(!_task_que.empty()){
 				cout << "executing task" << endl;

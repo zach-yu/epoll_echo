@@ -25,6 +25,7 @@
 #include <vector>
 #include <memory>
 #include <deque>
+#include <mutex>
 
 using namespace std;
 
@@ -45,6 +46,10 @@ public:
 
 	void setReadBuffer(const shared_ptr<ByteBuffer>& buf){
 		_rbuf = buf;
+	}
+
+	shared_ptr<ByteBuffer> getReadBuffer(){
+		return _rbuf;
 	}
 
 	int readMessageHeader(ByteBuffer& header_buf){
@@ -174,6 +179,7 @@ public:
 	}
 
 	void addWBuffer(const shared_ptr<ByteBuffer>& buf){
+		lock_guard<mutex> lock(_mutex);
 		_wbuf_queue.push_back(buf);
 
 	}
@@ -211,9 +217,11 @@ private:
 	// these pointers are used to temporarily store
 	// partially written/read buffer pointers
 
+	mutex _mutex;
 	deque<shared_ptr<ByteBuffer>> _wbuf_queue;
 	shared_ptr<ByteBuffer> _rbuf;
 
+public:
 	// register ONESHOT event
 	int register_event(int events){
 		cout << "register event IN "<< (int)(events&EPOLLIN) << " OUT " << (int)(events&EPOLLOUT) <<" on conn " << this << endl;

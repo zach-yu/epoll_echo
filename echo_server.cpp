@@ -12,10 +12,13 @@
 #include <stdlib.h>
 
 #include "Connection.h"
+#include "ExecutorService.h"
 
 using namespace std;
 
 const int MAX_EVENTS = 10000;
+
+ExecutorService<void, packaged_task<void()>> _executor_service;
 
 void set_nonblocking(int fd){
 	int val = fcntl(fd, F_GETFL, 0);
@@ -36,10 +39,7 @@ void set_socket_buffer(int fd, int size, int opt){
 	int n;
 	unsigned int size_of_n = sizeof(n);
 	int get_opt = opt;
-	/*
-	if(opt == SO_SNDBUFFORCE){
-		get_opt = SO_SNDBUF;
-	}*/
+
 	if( getsockopt(fd, SOL_SOCKET, get_opt, (void *)&n, &size_of_n) < 0 ){
 		cout << "getsockopt SO_SNDBUF failed:" << strerror(errno) << endl;
 	}
@@ -106,21 +106,41 @@ int writen(int fd, char *buf, int n){
 
 }
 
+class HeaderTask{
+	ByteBuffer _rbuf;
+public:
+	HeaderTask(const ByteBuffer& buffer) : _rbuf(buffer){}
 
-// register ONESHOT event
-int register_event(int epollfd, Connection* conn, int events){
-	cout << "register event IN "<< (int)(events&EPOLLIN) << " OUT " << (int)(events&EPOLLOUT) <<" on conn " << conn << endl;
-	struct epoll_event ev;
-	// is EPOLLET needed, if we have EPOLLONESHOT?
-    ev.events = events | EPOLLET | EPOLLONESHOT;
-    ev.data.ptr = conn;
-	if (epoll_ctl(epollfd, EPOLL_CTL_MOD, conn->_conn_fd, &ev) == -1) {
-		cout << " EPOLL_CTL_MOD failed" << endl;
-		return -1;
+	void operator()() const{
+		cout << "worker::received header:" << string((const char *)_rbuf.getBuffer(), _rbuf.getLimit()) << endl;
 	}
-	return 0;
-}
+};
 
+class BodyTask{
+	Connection* _conn;
+	ByteBuffer _rbuf;
+public:
+	BodyTask(Connection* conn, const ByteBuffer& buffer) : _conn(conn), _rbuf(buffer){}
+
+	void operator()() const{
+		cout << "worker::received body:" << string((const char *)_rbuf.getBuffer(), _rbuf.getLimit()) << endl;
+		// decode body and call processor
+		int to_write = 0;
+		// for testing blocking write
+		unsigned char *WBUF = new unsigned char[12800];
+		size_t nread = _rbuf.getLimit();
+		for( unsigned char* p = WBUF; p + nread < WBUF + 12800; p+= nread){
+			memcpy(p, _rbuf.getBuffer(), nread);
+			to_write += nread;
+		}
+		*(WBUF + to_write - 1) = 'X' ;
+		//
+		auto wbuf = make_shared<ByteBuffer>(ByteBuffer());
+		wbuf->setBuffer(WBUF, to_write);
+		_conn->addWBuffer(wbuf);
+		_conn->register_event(EPOLLIN | EPOLLOUT);
+	}
+};
 
 void do_use_fd(int epollfd, struct epoll_event* event){
 
@@ -142,19 +162,24 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 			ByteBuffer headbuf (4);
 			cout << " reading header" << endl;
 			conn->readMessageHeader(headbuf);
-			if(headbuf.remaining() > 0){
+
+			// save the buffer for next read and task
+			auto header_buf_ptr = make_shared<ByteBuffer>(move(headbuf));
+			conn->setReadBuffer(header_buf_ptr);
+
+			if(header_buf_ptr->remaining() > 0){
 				if(conn->_state != Connection::ERROR && conn->_state != Connection::CLOSED){
 					// blocked
 					cout << "blocked on reading header" << endl;
-					// save the buffer for next read
-					auto header_buf_ptr = make_shared<ByteBuffer>(move(headbuf));
-					conn->setReadBuffer(header_buf_ptr);
+
 				}
 				break;
 			}
 			else{
-				cout << "finished header" << endl;
-				conn->processHeader(headbuf);
+				cout << "finished header, submit header task" << endl;
+				packaged_task<void()> task(HeaderTask(*(conn->getReadBuffer())));
+				_executor_service.submit(task);
+				//conn->processHeader(headbuf);
 			}
 		}
 
@@ -167,7 +192,10 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 			}
 			else{
 				// process header
-				conn->processHeader();
+				//conn->processHeader();
+				cout << "finished header, submit header task2" << endl;
+				packaged_task<void()> task(HeaderTask(*(conn->getReadBuffer())));
+				_executor_service.submit(task);
 			}
 		}
 
@@ -178,18 +206,23 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 			ByteBuffer bodybuf (16);
 			conn->readMessageBody(bodybuf);
 			cout << "remaining:" << bodybuf.remaining() << endl;
-			if(bodybuf.remaining() > 0){
+
+			// save the buffer for next read
+			auto body_buf_ptr = make_shared<ByteBuffer>(move(bodybuf));
+			conn->setReadBuffer(body_buf_ptr);
+
+			if(body_buf_ptr->remaining() > 0){
 				if(conn->_state != Connection::ERROR && conn->_state != Connection::CLOSED){
 					cout << "blocked on reading body" << endl;
-					// save the buffer for next read
-					auto body_buf_ptr = make_shared<ByteBuffer>(move(bodybuf));
-					conn->setReadBuffer(body_buf_ptr);
 				}
 				break;
 			}
 			else{
 				//process body
-				conn->processBody();
+				//conn->processBody();
+				cout << "finished body, submit body task" << endl;
+				packaged_task<void()> task(BodyTask(conn, *(conn->getReadBuffer())));
+				_executor_service.submit(task);
 			}
 		}
 
@@ -203,7 +236,11 @@ void do_use_fd(int epollfd, struct epoll_event* event){
 			// finished reading body
 			else{
 				//process body
-				conn->processBody();
+				//conn->processBody();
+				cout << "finished body, submit body task2" << endl;
+				packaged_task<void()> task(BodyTask(conn, *(conn->getReadBuffer())));
+				_executor_service.submit(task);
+				//_executor_service.submit(move(HeaderTask(this)));
 
 			}
 		}

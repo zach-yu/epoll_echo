@@ -53,6 +53,14 @@ public:
 		_limit = _sz = sz;
 	}
 
+	const unsigned char* getBuffer() const{
+		return _buff;
+	}
+
+	size_t getLimit() const{
+		return _limit;
+	}
+
 protected:
 	unsigned char* _buff;
 	size_t _sz;
