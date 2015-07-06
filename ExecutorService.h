@@ -17,7 +17,7 @@
 
 using namespace std;
 
-// Task should be Callable
+// Task should be Callable, and can get_future()
 template<class Result, class Task>
 class ExecutorService {
 public:
