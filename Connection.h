@@ -186,6 +186,7 @@ public:
 
 	int flushWBuffer(){
 		int count = 0;
+		lock_guard<mutex> lock(_mutex);
 		while(!_wbuf_queue.empty()){
 			auto buffer = _wbuf_queue.front();
 			write(buffer.get());
