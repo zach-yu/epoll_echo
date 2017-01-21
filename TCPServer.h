@@ -93,27 +93,36 @@ public:
 			perror("epoll_ctl: listen_sock");
 			_exit(-1);
 		}
+		pipe(pp);
+		//ev.events = EPOLLIN | EPOLLONESHOT | EPOLLET;
+		ev.events = EPOLLIN | EPOLLET;
+		if (epoll_ctl(_epoll_fd, EPOLL_CTL_ADD, pp[0], &ev) == -1) {
+			perror("epoll_ctl: listen_sock");
+			_exit(-1);
+		}
+
 	}
 
 	void dowork();
 	virtual ~TCPServer() {}
 
 	static void *thread_helper(void *arg){
+		cout << "starting thread " << pthread_self() << endl;
 		TCPServer *me = static_cast<TCPServer *>(arg);
 		me->dowork();
 		return NULL;
 	}
 
 	void start(){
-		for(int i = 0; i < _thcount; ++i){
+		for(int i = 0; i < 4; ++i){
 
 			int r = pthread_create(&thread[i], NULL,&TCPServer::thread_helper, this);
 			if(r < 0){
 				perror("pthread_create");
 				_exit(-1);
 			}
-			for(int i = 0; i < _thcount; ++i) pthread_join(thread[i], NULL);
 		}
+		for(int i = 0; i < _thcount; ++i) pthread_join(thread[i], NULL);
 	}
 
 private:
@@ -125,6 +134,7 @@ private:
 	static const int MAX_EVENTS = 1000;
 	ExecutorService<void, packaged_task<void()>> _executor_service;
 	static bool _exiting;
+        int pp[2];
 
 	void set_nonblocking(int fd);
 
@@ -137,7 +147,9 @@ private:
 	static void sig_handler(int signo){
 		cout << "caught signal:" << signo << endl;
 		if(signo == SIGINT || signo == SIGTERM){
-			_exiting = true;
+			//_exiting = true;
+			exit(1);
+			//write(pp[1], "X", 1);
 		}
 	}
 };

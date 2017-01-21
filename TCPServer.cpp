@@ -186,25 +186,27 @@ void TCPServer::dowork(){
 	struct epoll_event ev, events[MAX_EVENTS];
     int nfds;
     while (!_exiting) {
-    	cout << "epoll_wait" << endl;
+    	cout << "epoll_wait thrd " << pthread_self()<< endl;
         nfds = epoll_wait(_epoll_fd, events, MAX_EVENTS, -1);
         if (nfds == -1) {
-        	cout << "epoll_wait failed" << endl;
+            cout << "epoll_wait failed" << endl;
             perror("epoll_wait");
             if(errno == EINTR){
             	cout << "_exiting = " << _exiting << endl;
             	continue;
             }
             else{
+		cout << "epoll_wait errno "<< errno << endl;
             	break;
             }
         }
-        cout << "epoll_wait woke up" << endl;
+        cout << "epoll_wait woke up for " << pthread_self() << endl;
         struct sockaddr_in local;
         socklen_t addrlen = sizeof(local);
         int conn_fd;
         for (int n = 0; n < nfds; ++n) {
             if (events[n].data.fd == _listen_fd) {
+		cout << "accepting on fd " << _listen_fd << endl;
                 conn_fd = accept4(_listen_fd, (struct sockaddr *) &local, &addrlen, SOCK_NONBLOCK);
                 if (conn_fd == -1) {
                 	if(errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR || errno == ECONNABORTED){
@@ -214,6 +216,7 @@ void TCPServer::dowork(){
                     cout << "accept() error: " << errno;
                     _exit(-1);
                 }
+		cout << "conn_fd="<< conn_fd << endl;
                 // set send buffer to the lowest limit, for testing purpose
                 set_socket_buffer(conn_fd, 2, SO_SNDBUF);
 
@@ -225,11 +228,11 @@ void TCPServer::dowork(){
                     perror("epoll_ctl: conn_sock1");
                     _exit(-1);
                 }
-				// reinstall listen fd
-				ev.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
+		// reinstall listen fd
+		ev.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
                 //ev.data.fd = _listen_fd;
-				cout << "reinstall fd=" << conn_fd << endl;
-                if (epoll_ctl(_epoll_fd, EPOLL_CTL_ADD, _listen_fd, &ev) == -1) {
+		cout << "reinstall fd=" << _listen_fd << endl;
+                if (epoll_ctl(_epoll_fd, EPOLL_CTL_MOD, _listen_fd, &ev) == -1) {
                     perror("epoll_ctl: conn_sock2");
                     _exit(-1);
                 }
