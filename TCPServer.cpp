@@ -227,7 +227,8 @@ void TCPServer::dowork(){
                 }
 				// reinstall listen fd
 				ev.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
-                ev.data.fd = _listen_fd;
+                //ev.data.fd = _listen_fd;
+				cout << "reinstall fd=" << conn_fd << endl;
                 if (epoll_ctl(_epoll_fd, EPOLL_CTL_ADD, _listen_fd, &ev) == -1) {
                     perror("epoll_ctl: conn_sock2");
                     _exit(-1);
