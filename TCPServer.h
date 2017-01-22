@@ -89,7 +89,7 @@ public:
 		ev.events = EPOLLIN | EPOLLONESHOT;
 		ev.data.fd = _listen_fd;
 		cout << "add " << ev.data.fd << " for event " << ev.events << endl;
-		if (epoll_ctl(_epollfd, EPOLL_CTL_ADD, _listen_fd, &ev) == -1) {
+		if (epoll_ctl(_epoll_fd, EPOLL_CTL_ADD, _listen_fd, &ev) == -1) {
 			perror("epoll_ctl: listen_sock");
 			_exit(-1);
 		}
