@@ -222,14 +222,14 @@ void TCPServer::dowork(){
                 ev.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
                 ev.data.ptr = new_conn;
                 if (epoll_ctl(_epoll_fd, EPOLL_CTL_ADD, conn_fd, &ev) == -1) {
-                    perror("epoll_ctl: conn_sock");
+                    perror("epoll_ctl: conn_sock1");
                     _exit(-1);
                 }
 				// reinstall listen fd
 				ev.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
                 ev.data.fd = _listen_fd;
-                if (epoll_ctl(_epoll_fd, EPOLL_CTL_ADD, conn_fd, &ev) == -1) {
-                    perror("epoll_ctl: conn_sock");
+                if (epoll_ctl(_epoll_fd, EPOLL_CTL_ADD, _listen_fd, &ev) == -1) {
+                    perror("epoll_ctl: conn_sock2");
                     _exit(-1);
                 }
             } else {
