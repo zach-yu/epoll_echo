@@ -79,7 +79,6 @@ public:
 
 		bind_socket_listen(_listen_fd);
 
-		struct epoll_event ev;//events[MAX_EVENTS];
 		_epoll_fd = epoll_create(256);
 		if (_epoll_fd == -1) {
 			perror("epoll_create");
@@ -101,6 +100,7 @@ public:
 	static void *thread_helper(void *arg){
 		TCPServer *me = static_cast<TCPServer *>(arg);
 		me->dowork();
+		return null;
 	}
 
 	void start(){
