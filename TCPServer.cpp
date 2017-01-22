@@ -181,26 +181,12 @@ void TCPServer::bind_socket_listen(int fd){
 	}
 }
 
-void TCPServer::start(){
-	struct epoll_event ev, events[MAX_EVENTS];
-    int epollfd = epoll_create(1);
-    if (epollfd == -1) {
-        perror("epoll_create");
-        _exit(-1);
-    }
 
-    ev.events = EPOLLIN;
-    ev.data.fd = _listen_fd;
-    cout << "add " << ev.data.fd << " for event " << ev.events << endl;
-    if (epoll_ctl(epollfd, EPOLL_CTL_ADD, _listen_fd, &ev) == -1) {
-        perror("epoll_ctl: listen_sock");
-        _exit(-1);
-    }
-
+void TCPServer::dowork(){
     int nfds;
     while (!_exiting) {
     	cout << "epoll_wait" << endl;
-        nfds = epoll_wait(epollfd, events, MAX_EVENTS, -1);
+        nfds = epoll_wait(_epollfd, events, MAX_EVENTS, -1);
         if (nfds == -1) {
         	cout << "epoll_wait failed" << endl;
             perror("epoll_wait");
@@ -234,7 +220,14 @@ void TCPServer::start(){
                 cout << "add new conn " << new_conn <<", fd=" << conn_fd << endl;
                 ev.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
                 ev.data.ptr = new_conn;
-                if (epoll_ctl(epollfd, EPOLL_CTL_ADD, conn_fd, &ev) == -1) {
+                if (epoll_ctl(_epollfd, EPOLL_CTL_ADD, conn_fd, &ev) == -1) {
+                    perror("epoll_ctl: conn_sock");
+                    _exit(-1);
+                }
+				// reinstall listen fd
+				ev.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
+                ev.data.fd = _listen_fd;
+                if (epoll_ctl(_epollfd, EPOLL_CTL_ADD, conn_fd, &ev) == -1) {
                     perror("epoll_ctl: conn_sock");
                     _exit(-1);
                 }

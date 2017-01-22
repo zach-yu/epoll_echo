@@ -78,18 +78,44 @@ public:
 		set_nonblocking(_listen_fd);
 
 		bind_socket_listen(_listen_fd);
+
+		struct epoll_event ev, events[MAX_EVENTS];
+		_epoll_fd = epoll_create(256);
+		if (_epoll_fd == -1) {
+			perror("epoll_create");
+			_exit(-1);
+		}
+
+		ev.events = EPOLLIN | EPOLLONESHOT;
+		ev.data.fd = _listen_fd;
+		cout << "add " << ev.data.fd << " for event " << ev.events << endl;
+		if (epoll_ctl(epollfd, EPOLL_CTL_ADD, _listen_fd, &ev) == -1) {
+			perror("epoll_ctl: listen_sock");
+			_exit(-1);
+		}
 	}
 
-	virtual ~TCPServer() {
+	virtual ~TCPServer() {}
 
+
+	static void *thread_helper(void *arg){
+		TCPServer *me = static_cast<TCPServer *> arg;
+		me->dowork();
 	}
 
-	void start();
+	void start(){
+		for(int i = 0; i < _thcount; ++i){
+
+			int r = pthread_create(&thread[i], NULL,&TCPServer::thread_helper, this);
+		}
+	}
 
 private:
 
 	int _port;
-	int _listen_fd;
+	int _listen_fd, _epoll_fd;
+	static int _thcount = 4;
+	pthread_t thread[100];
 	static const int MAX_EVENTS = 1000;
 	ExecutorService<void, packaged_task<void()>> _executor_service;
 	static bool _exiting;
