@@ -15,11 +15,28 @@ void TCPServer::do_use_fd1(struct epoll_event* event){
 	//int fd = conn->_conn_fd;
 	if(event->events & EPOLLIN){
 		conn->read();
+		if(conn->_state == Connection::CONN_STATE::CLOSED || conn->_state == Connection::CONN_STATE::ERROR) {
+			remove_fd(conn->_conn_fd);
+			// TODO : when to delete conn ??
+			//delete conn;
+			return;
+		}
+		reinstall_fd(conn->_conn_fd, EPOLLIN | EPOLLOUT | EPOLLONESHOT, conn);
 	}
-	if(event->events & EPOLLOUT){
+	else if(event->events & EPOLLOUT){
 		conn->write(conn->get_rdbuf());
+		// for test
+		sleep(1);
+		//
+		if(conn->_state == Connection::CONN_STATE::CLOSED || conn->_state == Connection::CONN_STATE::ERROR) {
+			cout << "conn:" << conn << " write error "<< endl;
+			remove_fd(conn->_conn_fd);
+			//delete conn;
+			return;			
+		}
+		reinstall_fd(conn->_conn_fd, EPOLLIN | EPOLLONESHOT, conn);
 	}
-	reinstall_fd(conn->_conn_fd, EPOLLIN | EPOLLOUT, conn);
+	
 	/*struct epoll_event ev;
 	ev.events = EPOLLIN | EPOLLOUT | EPOLLONESHOT;
 	ev.data.ptr = conn;
@@ -39,6 +56,13 @@ void TCPServer::install_fd(int fd, int events, void* data){
 		perror("epoll_ctl: EPOLL_CTL_MOD");
 		_exit(-1);
 	}
+}
+void TCPServer::remove_fd(int fd){
+	cout << "remove fd=" << fd << endl;
+	if (epoll_ctl(_epoll_fd, EPOLL_CTL_DEL, fd, NULL) == -1) {
+		perror("epoll_ctl: EPOLL_CTL_DEL");
+		_exit(-1);
+	}	
 }
 
 void TCPServer::reinstall_fd(int fd, int events){
@@ -64,7 +88,7 @@ void TCPServer::reinstall_fd(int fd, int events, void* data){
 }
 
 void TCPServer::do_use_fd(struct epoll_event* event){
-
+/*
 	Connection* conn = (Connection*)event->data.ptr;
 	cout << "conn:" << conn << endl;
 	int fd = conn->_conn_fd;
@@ -169,7 +193,7 @@ void TCPServer::do_use_fd(struct epoll_event* event){
 	if(conn->_state == Connection::CLOSED || conn->_state == Connection::ERROR){
 		cout << "state is Connection::CLOSED||Connection::ERROR" << endl;
 		delete conn;
-	}
+	}*/
 }
 
 void TCPServer::set_socket_buffer(int fd, int size, int opt){

@@ -15,14 +15,15 @@ _epoll_fd(epollfd), _rbuf(new ByteBuffer(64)) {
 Connection::~Connection() {
 	std::cout << "in Connection::~Connection()" << std::endl;
 	close(_conn_fd);
+	delete _rbuf;
 }
 
 ByteBuffer* Connection::get_rdbuf(){
-	return this->_rbuf.get();
+	return this->_rbuf;
 }
 
 int Connection::read(){
-	return read(this->_rbuf.get());
+	return read(this->_rbuf);
 }
 
 

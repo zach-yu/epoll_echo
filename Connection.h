@@ -43,7 +43,7 @@ public:
 	Connection(int fd, int epollfd);
 	virtual ~Connection();
 
-
+/*
 	void setReadBuffer(const shared_ptr<ByteBuffer>& buf){
 		_rbuf = buf;
 	}
@@ -51,7 +51,7 @@ public:
 	shared_ptr<ByteBuffer> getReadBuffer(){
 		return _rbuf;
 	}
-
+*/
 	int readMessageHeader(ByteBuffer& header_buf){
 		_state = READING_HEADER;
 
@@ -115,7 +115,7 @@ public:
 	int write(ByteBuffer* buf);
 
 	int readRemaining(){
-		int ret =read(_rbuf.get());
+		int ret =read(_rbuf);
 		if(_state == ERROR || _state == CLOSED)
 			return ret;
 		if(_rbuf->remaining() == 0){
@@ -220,7 +220,7 @@ private:
 
 	mutex _mutex;
 	deque<shared_ptr<ByteBuffer>> _wbuf_queue;
-	shared_ptr<ByteBuffer> _rbuf;
+	ByteBuffer* _rbuf;
 	
 
 public:

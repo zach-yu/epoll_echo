@@ -21,11 +21,14 @@
 #include <thread>
 #include <vector>
 
-#define THRNUM 1
+#define THRNUM 4
 
 using namespace std;
 
 char readbuf[1000];
+
+int port;
+
 
 void read_func(int fd){
 	cout << "starting read thread" << endl;
@@ -54,34 +57,14 @@ string gen_str(){
 	int len = 4 + rand()%16;
 	return string(len, c);
 }
-void write_func(int fd){
-	while(true){
-		string line = gen_str();
-		cout << "writing " << line << endl;
-		int nw = 0;
-		while(true){
-			cout << " writing " << nw << endl;
-			int ret = write(fd, line.c_str()+nw, line.size() - nw);
-			if(ret<0){
-				if(errno != EINTR || errno != EAGAIN) break;
-			}
-			if(ret == 0) break;
-			nw += ret;
-		}
-		sleep(1);
-
-	}
-
-}
-
-int main(int argc, char** argv){
+void write_func(string ip){
 	int sockfd = socket(AF_INET, SOCK_STREAM, 0);
 
 	struct sockaddr_in servaddr;
 	bzero(&servaddr, sizeof(servaddr));
 	servaddr.sin_family = AF_INET;
-	servaddr.sin_port = htons(atoi(argv[2]));
-	if(inet_pton(AF_INET, argv[1], &servaddr.sin_addr) <= 0 ){
+	servaddr.sin_port = htons(port);
+	if(inet_pton(AF_INET, ip.c_str(), &servaddr.sin_addr) <= 0 ){
 		cout << "inet_pton() failed" << endl;
 		exit(-1);
 	}
@@ -91,18 +74,38 @@ int main(int argc, char** argv){
 		exit(-1);
 	}
 
-	//thread read_th(read_func, sockfd);
-	vector<thread> reader;
+	thread reader = thread(read_func, sockfd);
+
+	while(true){
+		string line = gen_str();
+		cout << "writing " << line << endl;
+		int nw = 0;
+		while(true){
+			cout << " writing " << nw << endl;
+			int ret = write(sockfd, line.c_str()+nw, line.size() - nw);
+			if(ret<0){
+				if(errno != EINTR || errno != EAGAIN) break;
+			}
+			if(ret == 0) break;
+			nw += ret;
+		}
+		sleep(1);
+
+	}
+	reader.join();
+	close(sockfd);
+}
+
+int main(int argc, char** argv){
+	port = atoi(argv[2]);
 	vector<thread> writer;
 	for(int i = 0; i < THRNUM; ++i) {
-		reader.push_back(thread(read_func, sockfd));
-		writer.push_back(thread(write_func, sockfd));
+		writer.push_back(thread(write_func, argv[1]));
 	}
 	for(int i = 0; i < THRNUM; ++i) {
-		reader[i].join();
 		writer[i].join();
 	}
-	close(sockfd);
+	
 }
 
 

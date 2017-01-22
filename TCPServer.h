@@ -148,6 +148,7 @@ private:
 	void install_fd(int fd, int events, void *data);
 	void reinstall_fd(int fd, int events);
 	void reinstall_fd(int fd, int events, void *data);
+	void remove_fd(int fd);
 
 	static void sig_handler(int signo){
 		cout << "caught signal:" << signo << endl;
