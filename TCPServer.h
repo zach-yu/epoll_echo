@@ -109,9 +109,10 @@ public:
 
 			int r = pthread_create(&thread[i], NULL,&TCPServer::thread_helper, this);
 			if(r < 0){
-				perror("");
+				perror("pthread_create");
 				_exit(-1);
 			}
+			for(int i = 0; i < _thcount; ++i) pthread_join(thread[i], NULL);
 		}
 	}
 
