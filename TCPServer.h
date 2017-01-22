@@ -85,6 +85,7 @@ public:
 			_exit(-1);
 		}
 
+		struct epoll_event ev;
 		ev.events = EPOLLIN | EPOLLONESHOT;
 		ev.data.fd = _listen_fd;
 		cout << "add " << ev.data.fd << " for event " << ev.events << endl;
@@ -100,7 +101,7 @@ public:
 	static void *thread_helper(void *arg){
 		TCPServer *me = static_cast<TCPServer *>(arg);
 		me->dowork();
-		return null;
+		return NULL;
 	}
 
 	void start(){
@@ -128,7 +129,7 @@ private:
 
 	void bind_socket_listen(int fd);
 
-	void do_use_fd(int epollfd, struct epoll_event* event);
+	void do_use_fd(struct epoll_event* event);
 
 	void set_socket_buffer(int fd, int size, int opt);
 
