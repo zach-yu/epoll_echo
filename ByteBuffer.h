@@ -12,31 +12,30 @@
 #include <iostream>
 #include <string.h>
 
+using namespace std;
+
 class ByteBuffer {
 public:
-	ByteBuffer() : _buff(0), _sz(0), _limit(0), _pos(0){}
-
+	ByteBuffer() : _buff(0), _sz(0), _limit(0), _rpos(-1), _wpos(-1){}
 	ByteBuffer(size_t sz){
-
 		_buff = new unsigned char[sz];
-		std::cout << "allocate buf:" << (void*) _buff << std::endl;
 		_limit = _sz = sz;
-		_pos = _buff;
+		_rpos = _wpos = -1;
+		cout << "create ByteBuffer " << sz << endl;
 	}
 
 	ByteBuffer(const ByteBuffer& buf){
-
 		_buff = new unsigned char[buf._sz];
-
 		_sz = buf._sz;
 		memcpy(_buff, buf._buff, _sz);
 		_limit = buf._limit;
-		_pos = _buff + (buf._pos - buf._buff);
-		std::cout << "ByteBuffer copy ctor, allocate at " << (void*) _buff << " size:" << _sz << " filled:" << _pos - _buff << std::endl;
+		_rpos = buf._rpos;
+		_wpos = buf._wpos;
+		//std::cout << "ByteBuffer copy ctor, allocate at " << (void*) _buff << " size:" << _sz << " filled:" << _pos - _buff << std::endl;
 	}
 
-	ByteBuffer(ByteBuffer&& other) : _buff(other._buff), _sz(other._sz), _limit(other._limit), _pos(other._pos){
-		other._pos = 0;
+	ByteBuffer(ByteBuffer&& other) : _buff(other._buff), _sz(other._sz), _limit(other._limit), _rpos(other._rpos), _wpos(other._wpos){
+		other._rpos = other._wpos = -1;
 		other._limit = 0;
 		other._sz = 0;
 		other._buff = 0;
@@ -45,12 +44,13 @@ public:
 	virtual ~ByteBuffer();
 
 	int remaining(){
-		return _buff + _limit - _pos;
+		return _limit - _rpos;
 	}
 
 	void setBuffer(unsigned char* buf, size_t sz){
-		_pos = _buff = buf;
+		_buff = buf;
 		_limit = _sz = sz;
+		_rpos = _wpos = -1;
 	}
 
 	const unsigned char* getBuffer() const{
@@ -65,7 +65,8 @@ protected:
 	unsigned char* _buff;
 	size_t _sz;
 	size_t _limit;
-	unsigned char* _pos;
+	int _rpos;
+	int _wpos;
 
 friend class Connection;
 };

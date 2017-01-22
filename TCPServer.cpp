@@ -9,6 +9,60 @@
 
 bool  TCPServer::_exiting = false;
 
+void TCPServer::do_use_fd1(struct epoll_event* event){
+	Connection* conn = (Connection*)event->data.ptr;
+	cout << "conn:" << conn << endl;
+	//int fd = conn->_conn_fd;
+	if(event->events & EPOLLIN){
+		conn->read();
+	}
+	if(event->events & EPOLLOUT){
+		conn->write(conn->get_rdbuf());
+	}
+	reinstall_fd(conn->_conn_fd, EPOLLIN | EPOLLOUT, conn);
+	/*struct epoll_event ev;
+	ev.events = EPOLLIN | EPOLLOUT | EPOLLONESHOT;
+	ev.data.ptr = conn;
+	cout << "reinstall fd=" << conn->_conn_fd << endl;
+	if (epoll_ctl(_epoll_fd, EPOLL_CTL_ADD, conn->_conn_fd, &ev) == -1) {
+		perror("epoll_ctl: EPOLL_CTL_MOD1");
+		_exit(-1);
+	}*/
+}
+
+void TCPServer::install_fd(int fd, int events, void* data){
+	struct epoll_event ev;
+	ev.events = events;
+	ev.data.ptr = data;
+	cout << "install fd=" << fd << endl;
+	if (epoll_ctl(_epoll_fd, EPOLL_CTL_ADD, fd, &ev) == -1) {
+		perror("epoll_ctl: EPOLL_CTL_MOD");
+		_exit(-1);
+	}
+}
+
+void TCPServer::reinstall_fd(int fd, int events){
+	struct epoll_event ev;
+	ev.events = events;
+	ev.data.fd = fd;
+	cout << "reinstall fd=" << fd << endl;
+	if (epoll_ctl(_epoll_fd, EPOLL_CTL_MOD, fd, &ev) == -1) {
+		perror("epoll_ctl: EPOLL_CTL_MOD");
+		_exit(-1);
+	}
+}
+
+void TCPServer::reinstall_fd(int fd, int events, void* data){
+	struct epoll_event ev;
+	ev.events = events;
+	ev.data.ptr = data;
+	cout << "reinstall fd=" << fd << endl;
+	if (epoll_ctl(_epoll_fd, EPOLL_CTL_MOD, fd, &ev) == -1) {
+		perror("epoll_ctl: EPOLL_CTL_MOD");
+		_exit(-1);
+	}
+}
+
 void TCPServer::do_use_fd(struct epoll_event* event){
 
 	Connection* conn = (Connection*)event->data.ptr;
@@ -183,7 +237,7 @@ void TCPServer::bind_socket_listen(int fd){
 
 
 void TCPServer::dowork(){
-	struct epoll_event ev, events[MAX_EVENTS];
+	struct epoll_event events[MAX_EVENTS];
     int nfds;
     while (!_exiting) {
     	cout << "epoll_wait thrd " << pthread_self()<< endl;
@@ -206,7 +260,7 @@ void TCPServer::dowork(){
         int conn_fd;
         for (int n = 0; n < nfds; ++n) {
             if (events[n].data.fd == _listen_fd) {
-		cout << "accepting on fd " << _listen_fd << endl;
+				cout << "accepting on fd " << _listen_fd << endl;
                 conn_fd = accept4(_listen_fd, (struct sockaddr *) &local, &addrlen, SOCK_NONBLOCK);
                 if (conn_fd == -1) {
                 	if(errno == EWOULDBLOCK || errno == EAGAIN || errno == EINTR || errno == ECONNABORTED){
@@ -216,28 +270,33 @@ void TCPServer::dowork(){
                     cout << "accept() error: " << errno;
                     _exit(-1);
                 }
-		cout << "conn_fd="<< conn_fd << endl;
+				cout << "conn_fd="<< conn_fd << endl;
                 // set send buffer to the lowest limit, for testing purpose
                 set_socket_buffer(conn_fd, 2, SO_SNDBUF);
 
                 Connection* new_conn = new Connection(conn_fd, _epoll_fd);
                 cout << "add new conn " << new_conn <<", fd=" << conn_fd << endl;
-                ev.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
+				install_fd(conn_fd, EPOLLIN | EPOLLOUT | EPOLLET | EPOLLONESHOT, new_conn);
+				/*
+                ev.events = EPOLLIN | EPOLLOUT | EPOLLET | EPOLLONESHOT;
                 ev.data.ptr = new_conn;
                 if (epoll_ctl(_epoll_fd, EPOLL_CTL_ADD, conn_fd, &ev) == -1) {
                     perror("epoll_ctl: conn_sock1");
                     _exit(-1);
-                }
-		// reinstall listen fd
-		ev.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
-                //ev.data.fd = _listen_fd;
-		cout << "reinstall fd=" << _listen_fd << endl;
+                }*/
+				// reinstall listen fd
+				reinstall_fd(_listen_fd, EPOLLIN | EPOLLET | EPOLLONESHOT);
+				/*
+				ev.events = EPOLLIN | EPOLLET | EPOLLONESHOT;
+                ev.data.fd = _listen_fd;
+				
+				cout << "reinstall fd=" << _listen_fd << endl;
                 if (epoll_ctl(_epoll_fd, EPOLL_CTL_MOD, _listen_fd, &ev) == -1) {
                     perror("epoll_ctl: conn_sock2");
                     _exit(-1);
-                }
+                }*/
             } else {
-                do_use_fd(&events[n]);
+                do_use_fd1(&events[n]);
             }
         }
     }

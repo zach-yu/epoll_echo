@@ -86,7 +86,7 @@ public:
 	int readMessageBody(ByteBuffer& body_buf){
 		_state = READING_BODY;
 		int ret = read(&body_buf);
-		cout << "read body bytes:" << ret << ", body:" << string((const char *)body_buf._buff, body_buf._pos - body_buf._buff) << endl;
+		//cout << "read body bytes:" << ret << ", body:" << string((const char *)body_buf._buff, body_buf._pos - body_buf._buff) << endl;
 		if(_state == CLOSED) {
 			return 0;
 		}
@@ -127,7 +127,7 @@ public:
 			}
 		}
 		else{
-			cout << "rbuf: "<< string((const char *)_rbuf->_buff, _rbuf->_pos - _rbuf->_buff) << " have to read: " << _rbuf->remaining() << endl;
+			//cout << "rbuf: "<< string((const char *)_rbuf->_buff, _rbuf->_pos - _rbuf->_buff) << " have to read: " << _rbuf->remaining() << endl;
 			if(_wbuf_queue.size() > 0){
 				register_event(EPOLLIN | EPOLLOUT);
 			}
@@ -221,8 +221,12 @@ private:
 	mutex _mutex;
 	deque<shared_ptr<ByteBuffer>> _wbuf_queue;
 	shared_ptr<ByteBuffer> _rbuf;
+	
 
 public:
+	
+	ByteBuffer* get_rdbuf();
+	int read();
 	// register ONESHOT event
 	int register_event(int events){
 		cout << "register event IN "<< (int)(events&EPOLLIN) << " OUT " << (int)(events&EPOLLOUT) <<" on conn " << this << endl;

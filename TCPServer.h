@@ -141,8 +141,13 @@ private:
 	void bind_socket_listen(int fd);
 
 	void do_use_fd(struct epoll_event* event);
+	void do_use_fd1(struct epoll_event* event);
 
 	void set_socket_buffer(int fd, int size, int opt);
+
+	void install_fd(int fd, int events, void *data);
+	void reinstall_fd(int fd, int events);
+	void reinstall_fd(int fd, int events, void *data);
 
 	static void sig_handler(int signo){
 		cout << "caught signal:" << signo << endl;
